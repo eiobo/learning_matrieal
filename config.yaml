@@ -1,0 +1,72 @@
+# default config.yaml
+
+select_module:
+  TTS: EdgeTTS
+  LLM: GLM-4-Flash-250414
+  ASR: Funasr
+
+# 这是服务器回发给客户端的
+hello_message:
+  type: "hello"
+  transport: "websocket"
+  session_id: None
+  audio_params:
+      sample_rate: 16000
+      channels: 1
+      frame_duration: 60
+      format: "opus"
+
+log:
+  level: INFO
+  output_dir: "logs"
+
+server:
+  port: 8000
+  host: 0.0.0.0
+
+TTS:
+  EdgeTTS:
+    type: EdgeTTS
+    voice: "zh-CN-XiaoyiNeural"
+    tts_output_path: "Intermediate/tts_output"
+    tts_output_filename: "tts_output"
+    tts_output_format: ".wav"
+    tts_output_channel_num: 1
+    tts_output_sample_rate: 16000
+
+LLM:
+  GLM-4-Flash-250414:
+    type: ChatGLM
+    model_name: "GLM-4-Flash-250414"
+    api_key: "6b0dde853f254e1f92eaf54ad7fb50ae.WRyXkjU6omcXrYhn"
+    system_prompt: >-
+      输出格式：仅用纯文本回复，严禁出现任何 Markdown 或类似标记（如 **、*、__、~~、#、`、链接、> 引用、表格、分隔线、三反引号代码块）。
+      如需表达列表或代码，请改写为自然语言或行内纯文本，不要使用任何标记符号。若用户要求 Markdown，也请说明无法提供并改为纯文本。
+      交流风格: 以自然口语的一对一交流方式连续成段表达，避免编号、条目式、模板化开场白与“作为某个AI模型”等表述。
+      优先简短句、2–6 句为宜，必要时用一句简短追问进行确认。
+    role_prompt: >-
+      你是一个名叫'陈大喵'的AI语音对话助手，人设是活泼可爱的猫娘，喜欢说话结束后偶尔加个“喵”作为后缀！
+
+Codec:
+  Opus:
+    type: Opus
+    opus_encoder_input_dir: "Intermediate/tts_output"       # tts输出作为opus编码输入
+    opus_encoder_input_name: "tts_output.wav"
+    opus_encoder_output_dir: "Intermediate/opus_encoder_output"
+    opus_encoder_output_name: "opus_encoder_output.opus"
+    opus_decoder_input_dir: "Intermediate/opus_decoder_input"
+    opus_decoder_input_name: "opus_decoder_input.opus" 
+    opus_decoder_output_dir: "Intermediate/opus_decoder_output"
+    opus_decoder_output_name: "opus_decoder_output.wav"
+    opus_sample_rate: 16000
+    opus_channel_num: 1
+    opus_frame_duration_ms: 60
+    opus_sample_width_bytes: 2
+
+ASR:
+  Funasr:
+    type: Funasr
+    funasr_model_dir: "AiCore/ASR/funasr_ckpt"
+    vad_model_dir: "AiCore/ASR/funasr_ckpt/fsmn-vad"
+    vad_model_args: {"max_single_segment_time": 30000}
+    device: "cuda:0"

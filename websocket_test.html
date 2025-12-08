@@ -1,0 +1,99 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <title>WebSocket 测试工具</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <style>
+    * { box-sizing: border-box; }
+    body { font-family: system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif; margin:0; padding:20px; background:#f4f7f6; color:#333; }
+    .container { max-width:860px; margin:0 auto; background:#fff; padding:24px; border-radius:8px; box-shadow:0 4px 12px rgba(0,0,0,.05); }
+    h2 { margin-top:0; border-bottom:2px solid #eee; padding-bottom:8px; }
+    .row { display:flex; align-items:center; margin-bottom:12px; }
+    .row label { width:160px; font-weight:500; text-align:right; padding-right:10px; color:#555; }
+    input[type=text], input[type=number] { flex:1; padding:8px 10px; border:1px solid #ccc; border-radius:4px; font-size:14px; }
+    input:focus { outline:none; border-color:#007bff; box-shadow:0 0 0 3px rgba(0,123,255,.12); }
+    button { padding:9px 14px; font-size:14px; font-weight:600; border:none; border-radius:4px; cursor:pointer; margin-left:6px; }
+    button:active { transform:scale(.97); }
+    #btnConnect { background:#28a745; color:#fff; } #btnConnect:hover { background:#218838; }
+    #btnClose { background:#dc3545; color:#fff; } #btnClose:hover { background:#c82333; }
+    #btnSend, #btnHandshake { background:#007bff; color:#fff; } #btnSend:hover, #btnHandshake:hover { background:#0056b3; }
+    #btnSendListen { background:#6f42c1; color:#fff; } #btnSendListen:hover { background:#5a32a3; }
+    #btnClearLog { background:#6c757d; color:#fff; } #btnClearLog:hover { background:#5a6268; }
+    fieldset { border:1px solid #ddd; border-radius:6px; padding:14px 14px 4px; margin-top:18px; }
+    legend { padding:0 8px; font-weight:600; }
+    #log { width:100%; height:340px; white-space:pre-wrap; background:#fafafa; border:1px solid #ddd; border-radius:6px; padding:12px; overflow:auto; font-family:monospace; font-size:13px; line-height:1.5; }
+    .badge { display:inline-block; padding:2px 6px; font-size:11px; border-radius:4px; background:#eee; margin-left:6px; }
+  </style>
+</head>
+<body>
+<div class="container">
+  <h2>WebSocket 测试工具 <span class="badge">TTS Demo</span></h2>
+  <div class="row">
+    <label>服务器地址</label>
+    <input id="wsUrl" type="text" value="ws://127.0.0.1:8888/" />
+    <button id="btnConnect">连接</button>
+    <button id="btnClose" disabled>断开</button>
+  </div>
+
+  <fieldset>
+    <legend>握手 (Hello)</legend>
+    <div class="row"><label>type</label><input id="pType" type="text" value="hello" /></div>
+    <div class="row"><label>uuid</label><input id="uuid" type="text" value="00:11:22:33:44:55" /></div>
+    <div class="row"><label>version</label><input id="version" type="number" value="1" min="1" /></div>
+    <div class="row"><label>token</label><input id="token" type="text" value="123456" /></div>
+    <div class="row"><label>transport</label><input id="transport" type="text" value="websocket" /></div>
+    <div class="row"><label>audio.format</label><input id="aFormat" type="text" value="opus" /></div>
+    <div class="row"><label>audio.sample_rate</label><input id="aSampleRate" type="number" value="16000" /></div>
+    <div class="row"><label>audio.channels</label><input id="aChannels" type="number" value="1" /></div>
+    <div class="row"><label>audio.frame_duration</label><input id="aFrameDuration" type="number" value="60" /></div>
+  </fieldset>
+
+  <fieldset>
+    <legend>Listen -> LLM -> TTS</legend>
+    <div class="row"><label>type</label><input id="listen_type" type="text" value="listen" /></div>
+    <div class="row"><label>mode</label><input id="listen_mode" type="text" value="manual" /></div>
+    <div class="row"><label>state</label><input id="listen_state" type="text" value="detect" /></div>
+    <div class="row"><label>text</label><input id="listen_text" type="text" value="你好" /></div>
+  </fieldset>
+
+  <div class="row"><label>操作</label>
+    <button id="btnHandshake" disabled>发送 Hello</button>
+    <button id="btnSendListen" disabled>发送 Listen</button>
+    <button id="btnSend" disabled>发送 Raw</button>
+  </div>
+
+  <div class="row"><label>Raw 文本</label><input id="sendText" type="text" value="hello" /></div>
+
+  <div class="row" style="justify-content:flex-end; margin-top:4px;">
+    <button id="btnClearLog">清空日志</button>
+  </div>
+
+  <h3 style="margin:20px 0 6px;">日志</h3>
+  <div id="log"></div>
+</div>
+<script src="./libopus.js"></script>
+<script>
+let ws = null;
+let ttsSessionActive = false;
+let opusPlayer = null; // 在 libopus.js 中定义
+function log(msg, level="info") { const panel=document.getElementById('log'); const time=new Date().toLocaleTimeString(); panel.textContent += `[${time}] ${msg}\n\n`; panel.scrollTop=panel.scrollHeight; if(level==='error') console.error(msg); else console.log(msg); }
+function $(id){return document.getElementById(id);} 
+function getHello(){return {type:$('#pType').value.trim()||'hello', uuid:$('#uuid').value.trim(), version:parseInt($('#version').value,10)||1, token:$('#token').value.trim(), transport:$('#transport').value.trim()||'websocket', audio_params:{format:$('#aFormat').value.trim()||'opus', sample_rate:parseInt($('#aSampleRate').value,10)||16000, channels:parseInt($('#aChannels').value,10)||1, frame_duration:parseInt($('#aFrameDuration').value,10)||60}};}
+function getListen(){return {type:$('#listen_type').value.trim()||'listen', mode:$('#listen_mode').value.trim(), state:$('#listen_state').value.trim(), text:$('#listen_text').value.trim()};}
+function connect(){ const urlRaw=$('#wsUrl').value.trim(); const url=/^wss?:\/\//.test(urlRaw)?urlRaw:`ws://${urlRaw}`; log('正在连接: '+url); try{ ws=new WebSocket(url);}catch(e){ log('WebSocket 构造失败: '+e.message,'error'); return;} ws.binaryType='arraybuffer'; ws.onopen=()=>{ log('连接已建立'); ['btnConnect'].forEach(id=>$(id).disabled=true); ['btnClose','btnHandshake','btnSendListen','btnSend'].forEach(id=>$(id).disabled=false); }; ws.onclose=e=>{ log(`连接已关闭 Code=${e.code} Reason=${e.reason||'N/A'}`); ['btnConnect'].forEach(id=>$(id).disabled=false); ['btnClose','btnHandshake','btnSendListen','btnSend'].forEach(id=>$(id).disabled=true); ttsSessionActive=false; opusPlayer&&opusPlayer.reset();}; ws.onerror=()=>log('WebSocket 错误','error'); ws.onmessage=e=>handleMessage(e.data); }
+function handleMessage(data){ if(data instanceof ArrayBuffer){ if(!ttsSessionActive){ log('收到二进制但当前未处于TTS会话，丢弃'); return;} const packet=new Uint8Array(data); opusPlayer.pushPacket(packet); return; } // 文本
+ let obj=null; try{ obj=JSON.parse(data);}catch{ log('收到文本:'+data); return;} if(typeof obj!=='object'||obj===null||Array.isArray(obj)){ log('收到非对象 JSON，忽略'); return;} const type=obj.type; if(type==='tts'){ // 根据 state 控制开始/结束
+    const state=obj.state; if(state==='sentence_start'||state==='start'){ startTtsSession(obj); } else if(state==='sentence_end'||state==='stop'){ endTtsSession(obj); } else { log('收到 tts 中间状态: '+JSON.stringify(obj)); }
+    return; }
+ log('收到消息 (JSON Object):\n'+JSON.stringify(obj,null,2)); }
+function startTtsSession(meta){ if(ttsSessionActive){ log('已有 TTS 会话，重置'); opusPlayer.reset(); }
+  ttsSessionActive=true; opusPlayer.start(meta); log('TTS 会话开始: '+(meta.text?meta.text.slice(0,50):'')); }
+function endTtsSession(meta){ if(!ttsSessionActive){ log('收到结束但没有活动 TTS 会话'); return; } ttsSessionActive=false; opusPlayer.finish(meta); log('TTS 会话结束: '+(meta.text?meta.text.slice(0,50):'')); }
+function sendHello(){ if(!ws||ws.readyState!==1)return; const h=getHello(); ws.send(JSON.stringify(h)); log('握手已发送:\n'+JSON.stringify(h,null,2)); }
+function sendListen(){ if(!ws||ws.readyState!==1)return; const l=getListen(); ws.send(JSON.stringify(l)); log('Listen 消息已发送:\n'+JSON.stringify(l,null,2)); }
+function sendRaw(){ if(!ws||ws.readyState!==1)return; const t=$('#sendText').value; ws.send(t); log('发送 Raw: '+t); }
+$('#btnConnect').onclick=connect; $('#btnClose').onclick=()=>ws&&ws.close(); $('#btnHandshake').onclick=sendHello; $('#btnSendListen').onclick=sendListen; $('#btnSend').onclick=sendRaw; $('#btnClearLog').onclick=()=>{ $('#log').textContent=''; log('日志已清空'); };
+</script>
+</body>
+</html>
